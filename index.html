@@ -1,1 +1,168 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tableau de Bord Agro</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
+    <style>body { background-color: #f3f4f6; }</style>
+
+    <!-- IMPORTATION DES VARIABLES D'ENVIRONNEMENT -->
+    <script src="env.js"></script>
+
+</head>
+<body class="text-gray-800 font-sans pb-10">
+
+    <nav class="bg-white shadow-md py-4 px-6 mb-8 flex justify-between items-center">
+        <h1 class="text-2xl font-bold text-green-600">🌿 Dashboard Agro-Capteur</h1>
+        <div class="text-sm font-semibold text-gray-500 bg-gray-100 py-1 px-3 rounded-full" id="last-update">
+            Dernière maj : --:--
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto px-4">
+        <!-- Cartes -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-white rounded-xl shadow-sm p-6 border-l-4 border-green-500 transition-colors duration-300" id="card-co2">
+                <h2 class="text-sm uppercase font-semibold text-gray-500 mb-1">Dioxyde de Carbone (CO2)</h2>
+                <div class="flex items-end"><span class="text-4xl font-bold" id="val-co2">--</span><span class="text-lg text-gray-500 ml-2 mb-1">ppm</span></div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-6 border-l-4 border-orange-400">
+                <h2 class="text-sm uppercase font-semibold text-gray-500 mb-1">Température</h2>
+                <div class="flex items-end"><span class="text-4xl font-bold text-orange-500" id="val-temp">--</span><span class="text-lg text-gray-500 ml-2 mb-1">°C</span></div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-6 border-l-4 border-blue-400">
+                <h2 class="text-sm uppercase font-semibold text-gray-500 mb-1">Humidité</h2>
+                <div class="flex items-end"><span class="text-4xl font-bold text-blue-500" id="val-hum">--</span><span class="text-lg text-gray-500 ml-2 mb-1">%</span></div>
+            </div>
+        </div>
+
+        <!-- Graphique -->
+        <div class="bg-white rounded-xl shadow-sm p-6 mb-8">
+            <h2 class="text-lg font-bold mb-4 text-gray-700">Évolution (30 dernières mesures)</h2>
+            <div class="relative h-[400px] w-full"><canvas id="myChart"></canvas></div>
+        </div>
+
+        <!-- Tableau -->
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <h2 class="text-lg font-bold mb-4 text-gray-700">Historique détaillé</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-gray-50 text-gray-500 text-sm uppercase">
+                            <th class="py-3 px-4 rounded-tl-lg">Heure</th>
+                            <th class="py-3 px-4">CO2 (ppm)</th>
+                            <th class="py-3 px-4">Température (°C)</th>
+                            <th class="py-3 px-4 rounded-tr-lg">Humidité (%)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table-body" class="text-gray-700"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCRIPT LOGIQUE -->
+    <script>
+        // On utilise les variables qui proviennent du fichier env.js
+        const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        let myChart = null;
+
+        async function fetchData() {
+            const { data, error } = await client
+                .from('mesures_agro')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .limit(30);
+
+            if (!error && data && data.length > 0) {
+                updateDashboard(data);
+            }
+        }
+
+        function updateDashboard(data) {
+            const latest = data[0];
+            document.getElementById('val-co2').innerText = latest.co2;
+            document.getElementById('val-temp').innerText = parseFloat(latest.temperature).toFixed(1);
+            document.getElementById('val-hum').innerText = parseFloat(latest.humidite).toFixed(1);
+
+            const lastDate = new Date(latest.created_at);
+            document.getElementById('last-update').innerText = "Dernière maj : " + lastDate.toLocaleTimeString('fr-FR');
+
+            const cardCo2 = document.getElementById('card-co2');
+            if(latest.co2 < 1000) {
+                cardCo2.className = "bg-white rounded-xl shadow-sm p-6 border-l-4 border-green-500 transition-colors";
+                document.getElementById('val-co2').style.color = "#22c55e"; 
+            } else if(latest.co2 < 1500) {
+                cardCo2.className = "bg-white rounded-xl shadow-sm p-6 border-l-4 border-yellow-500 transition-colors";
+                document.getElementById('val-co2').style.color = "#eab308"; 
+            } else {
+                cardCo2.className = "bg-white rounded-xl shadow-sm p-6 border-l-4 border-red-500 transition-colors";
+                document.getElementById('val-co2').style.color = "#ef4444"; 
+            }
+
+            const tableBody = document.getElementById('table-body');
+            tableBody.innerHTML = ''; 
+            
+            data.forEach(row => {
+                const d = new Date(row.created_at);
+                const timeStr = d.toLocaleTimeString('fr-FR');
+                let co2Color = row.co2 > 1000 ? 'text-red-500 font-bold' : 'text-green-600 font-bold';
+                tableBody.innerHTML += `
+                    <tr class="border-b hover:bg-gray-50 transition-colors">
+                        <td class="py-3 px-4">${timeStr}</td>
+                        <td class="py-3 px-4 ${co2Color}">${row.co2}</td>
+                        <td class="py-3 px-4">${parseFloat(row.temperature).toFixed(1)}</td>
+                        <td class="py-3 px-4">${parseFloat(row.humidite).toFixed(1)}</td>
+                    </tr>
+                `;
+            });
+
+            const chartData = [...data].reverse(); 
+            const labels = chartData.map(row => new Date(row.created_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'}));
+            const co2Values = chartData.map(row => row.co2);
+            const tempValues = chartData.map(row => row.temperature);
+            const humValues = chartData.map(row => row.humidite); 
+
+            updateChart(labels, co2Values, tempValues, humValues);
+        }
+
+        function updateChart(labels, co2Values, tempValues, humValues) {
+            const ctx = document.getElementById('myChart').getContext('2d');
+            if (myChart) {
+                myChart.data.labels = labels;
+                myChart.data.datasets[0].data = co2Values;
+                myChart.data.datasets[1].data = tempValues;
+                myChart.data.datasets[2].data = humValues; 
+                myChart.update();
+                return;
+            }
+            myChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: 'CO2 (ppm)', data: co2Values, borderColor: '#22c55e', backgroundColor: 'rgba(34, 197, 94, 0.1)', yAxisID: 'y', tension: 0.3, fill: true },
+                        { label: 'Température (°C)', data: tempValues, borderColor: '#f97316', backgroundColor: 'transparent', yAxisID: 'y1', tension: 0.3 },
+                        { label: 'Humidité (%)', data: humValues, borderColor: '#3b82f6', backgroundColor: 'transparent', yAxisID: 'y1', borderDash: [5, 5], tension: 0.3 }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'CO2 (ppm)' } },
+                        y1: { type: 'linear', display: true, position: 'right', title: { display: true, text: 'Température (°C) / Humidité (%)' }, grid: { drawOnChartArea: false } }
+                    }
+                }
+            });
+        }
+
+        fetchData();
+        setInterval(fetchData, 10000);
+    </script>
+</body>
+</html>
